@@ -41,7 +41,7 @@ struct
     for i = 0 to len - 1 do
       ans := pr_imm shf v.(i) :: !ans
     done;
-    let ans = String.concat " " !ans in
+    let ans = String.concat " " (List.rev !ans) in
     ans
 
   let dump () =
