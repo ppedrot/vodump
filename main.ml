@@ -55,13 +55,13 @@ struct
     for i = 0 to len - 1 do
       match LargeArray.get !memory i with
       | Struct (tag, obj) ->
-        Printf.printf "%0*x::B:%i[%i]{%s}\n%!" shf i tag (Array.length obj) (pr_struct shf obj)
+        Printf.printf "0x%0*x::B:%i[%i]{%s}\n%!" shf i tag (Array.length obj) (pr_struct shf obj)
       | Int64 n ->
-        Printf.printf "%0*x::I:%s\n%!" shf i (Int64.to_string n)
+        Printf.printf "0x%0*x::I:%s\n%!" shf i (Int64.to_string n)
       | Float64 f ->
-        Printf.printf "%0*x::F:%s\n%!" shf i (string_of_float f)
+        Printf.printf "0x%0*x::F:%s\n%!" shf i (string_of_float f)
       | String s ->
-        Printf.printf "%0*x::S:\"%s\"\n%!" shf i (String.escaped s)
+        Printf.printf "0x%0*x::S:\"%s\"\n%!" shf i (String.escaped s)
     done
 
 end
