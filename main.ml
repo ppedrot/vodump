@@ -98,42 +98,71 @@ let parse_header chan =
   { magic; length; size32; size64; objects }
 
 type segment = {
-  pos : int;
-  header : header;
+  name : string;
+  pos : int64;
+  len : int64;
+  hash : Digest.t;
 }
 
-let parse_segment ch =
-  let pos = input_binary_int ch in
-  let org = pos_in ch in
-  let header = parse_header ch in
-  let seg = { pos = org; header } in
-  seek_in ch pos;
-  ignore(Digest.input ch);
-  seg
+let input_int32 ch =
+  let accu = ref 0l in
+  for _i = 0 to 3 do
+    let c = input_byte ch in
+    accu := Int32.add (Int32.shift_left !accu 8) (Int32.of_int c)
+  done;
+  !accu
 
-let rec parse_segments ch accu = match parse_segment ch with
-| seg -> parse_segments ch (seg :: accu)
-| exception _ -> accu
+let input_int64 ch =
+  let accu = ref 0L in
+  for _i = 0 to 7 do
+    let c = input_byte ch in
+    accu := Int64.add (Int64.shift_left !accu 8) (Int64.of_int c)
+  done;
+  !accu
+
+let input_segment_summary ch =
+  let nlen = input_int32 ch in
+  let name = really_input_string ch (Int32.to_int nlen) in
+  let pos = input_int64 ch in
+  let len = input_int64 ch in
+  let hash = Digest.input ch in
+  { name; pos; len; hash }
+
+let rec input_segment_summaries ch n accu =
+  if Int32.equal n 0l then List.rev accu
+  else
+    let s = input_segment_summary ch in
+    let accu = (s.name, s) :: accu in
+    input_segment_summaries ch (Int32.pred n) accu
 
 let visit_vo f seg =
     let ch = open_in_bin f in
-    let magic = input_binary_int ch in
-    let segments = parse_segments ch [] in
-    let segments = Array.of_list (List.rev segments) in
+    let magic = input_int32 ch in
+    let version = input_int32 ch in
+    let summary_pos = input_int64 ch in
+    let () = LargeFile.seek_in ch summary_pos in
+    let nsum = input_int32 ch in
+    let segments = input_segment_summaries ch nsum [] in
     match seg with
     | None ->
-      Printf.printf "Coq magic number: %d\n%!" magic;
-      Array.iteri (fun i { pos; header } ->
-        let size = if Sys.word_size = 64 then header.size64 else header.size32 in
-        Printf.printf "%d: starting at byte %d (size %iw)\n" i pos size)
-        segments
+      let () = Printf.printf "Coq magic number: %ld\n%!" magic in
+      let () = Printf.printf "Coq version: %ld\n%!" version in
+      let iter (name, seg) =
+        Printf.printf "%s: starting at byte %Li, length %Li [%s]\n" name seg.pos seg.len (Digest.to_hex seg.hash)
+      in
+      List.iter iter segments
     | Some seg ->
-       seek_in ch segments.(seg).pos;
-       let _ = Repr.input ch in
-       Repr.dump ()
+      match List.assoc_opt seg segments with
+      | None ->
+        let () = Printf.printf "Missing segment \"%s\"\n%!" seg in
+        exit 1
+      | Some seg ->
+        LargeFile.seek_in ch seg.pos;
+        let _ = Repr.input ch in
+        Repr.dump ()
 
 let usage () =
-  let () = Printf.printf "Usage: vodump FILE [NUMBER]\n%!" in
+  let () = Printf.printf "Usage: vodump FILE [SEGMENT]\n%!" in
   exit 1
 
 let () =
@@ -143,6 +172,6 @@ let () =
     visit_vo f None
   else if nargs = 3 then
     let f = Sys.argv.(1) in
-    let n = try int_of_string Sys.argv.(2) with _ -> usage () in
+    let n = Sys.argv.(2) in
     visit_vo f (Some n)
   else usage ()
